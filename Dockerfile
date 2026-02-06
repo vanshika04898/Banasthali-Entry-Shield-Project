@@ -1,14 +1,12 @@
-FROM node:24.12.0-alpine
-
+# Build frontend
+FROM node:24.12.0-alpine AS build
 WORKDIR /app
-
-# Copy only package files first (better caching)
-COPY package*.json ./
+COPY frontend/package*.json ./
 RUN npm ci
+COPY frontend/ .
+RUN npm run build
 
-# Copy the rest of the app (without node_modules thanks to .dockerignore)
-COPY . .
-
-EXPOSE 5173
-
-CMD ["npm", "run", "dev", "--", "--host"]
+# Nginx runtime (serves frontend + proxies)
+FROM nginx:alpine
+COPY nginx/default.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
