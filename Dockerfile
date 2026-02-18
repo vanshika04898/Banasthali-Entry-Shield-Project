@@ -1,14 +1,35 @@
-FROM node:24.12.0-alpine
+FROM python:3.11-slim
 
 WORKDIR /app
 
-# Copy only package files first (better caching)
-COPY package*.json ./
-RUN npm ci
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
-# Copy the rest of the app (without node_modules thanks to .dockerignore)
+# 🔹 ADD: system deps required for OpenCV / OCR
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# 🔹 COPY requirements first for layer caching
+COPY requirements.txt .
+
+# 🔹 Upgrade pip tooling + install deps
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && pip install --no-cache-dir -r requirements.txt
+
+# 🔹 COPY application code
 COPY . .
 
-EXPOSE 5173
+# 🔹 OCR configuration (CPU)
+ENV YOLO_MODEL_PATH=license_plate_detector.pt
+ENV OCR_LANGS=en
+ENV MIN_OCR_CONF=0.4
 
-CMD ["npm", "run", "dev", "--", "--host"]
+EXPOSE 5000
+
+# 🔹 Use gunicorn instead of flask dev server
+CMD ["gunicorn", "-b", "0.0.0.0:5000", "app:app", "--workers", "2", "--threads", "4", "--timeout", "120"]
